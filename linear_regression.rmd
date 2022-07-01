@@ -1,0 +1,219 @@
+---
+title: "projekt"
+output: html_document
+date: '2022-05-15'
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Dane
+
+# Dane zawierają szczegółowe informacje o uczniach - ich płeć, pochodzenie, czas poświęcony na naukę i spotkania z rówieśnikami i wiele innych. Naszym celem jest przewidzenie oceny którą otrzymali na egzaminie końcowym z matematyki.
+
+# Dane pobrane ze strony
+<https://archive.ics.uci.edu/ml/datasets/Student+Performance?fbclid=IwAR0RD6cboFSFwpnDtKjFpLs5v_TsUPV7KoUIXNRdOAfDYqwUjth58Z8Ng_g>
+
+```{r}
+student <- read.csv(file = 'student/student-mat.csv', sep=";")
+names(student)
+dim(student)
+head(student)
+```
+
+# W pierwszym kroku wykonamy regresję dla wszystkich kolumn, aby sprawdzić, które z nich są statystycznie istotne i warto je badać dokładniej.
+
+```{r pressure, echo=FALSE}
+fit_all <- lm(G1 ~ . - G2 -G3, data = student)
+summary(fit_all)
+```
+
+# Widzimy, że jedynie kilka parametrów okazało się istotnych:
+
+# -   sex_M - uczniowie płci męskiej częściej uzyskiwali dobre wyniki
+# -   studytime - dłuższy czas uczenia ma wpływ na poprawę oceny
+# -   failures - wielokrotne niezdanie klasy w przeszłości zmniejsza szansę na wysoką ocenę
+# -   schoolsup_yes - czy uczeń uzyskuje specjalne wsparcie
+# -   famsup_yes - czy uczeń dostaje specjalne wsparcie w rodzinie
+# -   goout - częste wychodzenie ze znajomymi obniża oceny
+
+
+# Zobaczmy jak dokładniej wygląda wpływ liczby niezdanych klas na ocenę
+
+```{r}
+fit_simple <- lm(G1 ~ failures, data = student)
+summary(fit_simple)
+```
+
+# Korzystając ze współczynników, widać że każda oblana klasa obniża ocenę o około 1.6 punktu na 20 możliwych
+
+```{r}
+coef(fit_simple)
+```
+
+# Sprawdzając przedział ufności widać że wartość z dużą pewnością mieści się pomiędzy -1.16 a -1.99
+
+```{r}
+confint(fit_simple)
+```
+
+# Dopasowanie prostej widać dobrze na poniższym wykresie
+
+```{r}
+grades = student$G1
+plot(student$failures, grades)
+abline(fit_simple)
+```
+
+
+
+# PŁEĆ
+# Analiza wpływu płci na ocenę
+```{r}
+fit_sex <- lm(G1 ~ sex, data = student)
+summary(fit_sex)
+```
+
+# Korzystając ze współczynników, widać że mężczyźni zdobywają o około 0.6 punktu więcej na 20 możliwych
+```{r}
+coef(fit_sex)
+```
+
+# Poniższy wykres przedstawia dopasowanie prostej:
+```{r}
+grades = student$G1
+sex_n <- c('woman','man')
+sex = as.numeric(as.factor(student$sex))
+plot(sex, grades, xaxt = 'n')
+axis(1, at=1:2, labels=sex_n)
+abline(fit_sex)
+
+```
+
+
+
+# CZAS NAUKI
+# Analiza wpływu czasu nauki na ocenę:
+```{r}
+fit_st <- lm(G1 ~ studytime, data = student)
+summary(fit_st)
+```
+
+# Korzystając ze współczynników, widać że zwiększenie tygodniowej liczby godzin nauki o około 4h powoduje zwiększenie punktów średnio o 0.6
+```{r}
+coef(fit_st)
+```
+
+# Poniższy wykres przedstawia dopasowanie prostej:
+```{r}
+grades = student$G1
+hours = student$studytime
+st_n <- c('<2 hours', '2-5 hours', '5-10 hours', '>10 hours')
+plot(hours, grades, xaxt = 'n')
+axis(1, at=1:4, labels=st_n)
+abline(fit_sex)
+
+```
+
+
+
+# OTRZYMYWANIE WSPARCIA SOCIALNEGO
+# Analiza wpływu otrzymywania wsparcia socialnego na oceny:
+```{r}
+fit_ss <- lm(G1 ~ schoolsup, data = student)
+summary(fit_ss)
+```
+
+# Korzystając ze współczynników, widać że uczniowie otrzymujący wsparcie socjalne osiągają o około 2,1 niższe stopnie
+```{r}
+coef(fit_ss)
+```
+
+# Poniższy wykres przedstawia dopasowanie prostej:
+```{r}
+grades = student$G1
+ss_n <- c('no','yes')
+support = as.numeric(as.factor(student$schoolsup))
+plot(support, grades, xaxt = 'n')
+axis(1, at=1:2, labels=ss_n)
+abline(fit_ss)
+
+```
+
+
+
+# OTRZYMYWANIE WSPARCIA OD RODZINY
+# Analiza wpływu otrzymywania wsparcia ze strony rodziny na oceny:
+```{r}
+fit_fs <- lm(G1 ~ famsup, data = student)
+summary(fit_fs)
+```
+
+# Korzystając ze współczynników, widać że uczniowie otrzymujący wsparcie rodzinne osiągają o około 0,57 niższe stopnie
+```{r}
+coef(fit_fs)
+```
+
+# Poniższy wykres przedstawia dopasowanie prostej:
+```{r}
+grades = student$G1
+fs_n <- c('no','yes')
+support = as.numeric(as.factor(student$famsup))
+plot(support, grades, xaxt = 'n')
+axis(1, at=1:2, labels=fs_n)
+abline(fit_fs)
+
+```
+
+
+
+# CZĘSTOŚĆ WYCHODZENIA Z DOMU
+# Analiza wpływu częstości wychodzenia z domu na ocenę:
+```{r}
+fit_go <- lm(G1 ~ goout, data = student)
+summary(fit_go)
+```
+
+# Korzystając ze współczynników, widać że osoby często wychodzące uzyskują o około 0.6 punktu mniej
+```{r}
+coef(fit_go)
+```
+
+# Poniższy wykres przedstawia dopasowanie prostej:
+```{r}
+grades = student$G1
+go_out = student$goout
+go_n <- c('very low', 'low', 'medium', 'high', 'very high')
+plot(go_out, grades, xaxt = 'n')
+axis(1, at=1:5, labels=go_n)
+abline(fit_go)
+
+```
+
+
+
+# WSZYSTKIE NAJWAŻNIEJSZE PREDYKTORY
+# Analiza wpływu najważniejszych predyktorów na ocenę:
+```{r}
+fit <- lm(G1 ~ goout + famsup + schoolsup + sex + failures + studytime, data = student)
+summary(fit)
+```
+
+# Wyświetlenie współczynników
+```{r}
+coef(fit)
+```
+
+# Zbiór ufności dla dwóch współczynników
+```{r}
+
+library(ellipse)
+plot(ellipse(fit, which = -1), type = "l")
+coefs <- coef(fit)
+points(coefs[2], coefs[3])
+
+```
