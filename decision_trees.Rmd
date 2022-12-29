@@ -1,0 +1,375 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+library(ISLR)
+library(MASS)
+library(tree)
+library(randomForest)
+library(gbm)
+```
+
+
+```{r}
+student <- read.csv(file = 'student/student-mat.csv', sep=";")
+names(student)
+dim(student)
+head(student)
+```
+```{r}
+student$sex <- as.factor(student$sex)
+```
+
+### DRZEWA DECYZYJNE
+
+
+
+## Budujemy drzewo
+```{r}
+tree <- tree(sex ~ ., data = student)
+summary(tree)
+```
+
+```{r plottree}
+plot(tree)
+text(tree, pretty = 0)
+tree
+
+```
+# predyktory które nie wystąpiły w drzewie są nieistotne
+# freetime wystąpił 2 razy więc jest bardzo istotny
+# studytime jest na samej górze więc jest najistotniejszy
+
+
+## Podział na zbiór walidacyjny i treningowy
+```{r}
+smp_size <- floor(0.75 * nrow(student))
+set.seed(123)
+train_ind <- sample(seq_len(nrow(student)), size = smp_size)
+
+train <- student[train_ind, ]
+test <- student[-train_ind, ]
+```
+
+
+# estymacja błędu testowego dla drzewa klasyfikacyjnego na podstawie zbioru walidacyjnego
+
+```{r classtreeerror}
+set.seed(1)
+
+h_tree <- tree(sex ~ ., data = train)
+tree_class <- predict(h_tree, test, type = "class")
+table(tree_class, test$sex)
+mean(tree_class != test$sex)
+```
+# drzewo dla zbioru uczącego
+
+```{r bigclasstree}
+plot(h_tree)
+text(h_tree, pretty = 0)
+```
+# stosujemy przycinanie stosowane złożonością aby przyciąć drzewo i zachować tylko istotne informacje
+# chcemy aby drzewo miało małą wariancję i nie dopasowało się dokładnie do zbioru treningowego
+# wtedy modele będą mało podatne na zmianę danych
+
+```{r classtreecv}
+set.seed(1)
+h_cv <- cv.tree(h_tree, FUN = prune.misclass)
+h_cv
+plot(h_cv$size, h_cv$dev, type = "b")
+```
+
+# Składowa `h_cv$dev` zawiera liczbę błędów CV. 
+# Przycinamy drzewo do poddrzewa z najmniejszym poziomem błędów CV.
+
+```{r class.tree.prune}
+size_opt <- h_cv$size[which.min(h_cv$dev)]
+high_pruned <- prune.misclass(h_tree, best = size_opt)
+plot(high_pruned)
+text(high_pruned, pretty = 0)
+```
+# otrzymaliśmy tylko najistotniejsze predyktory
+
+# obliczamy błąd  --> jest trochę niższy niż dla dużego drzewa
+```{r class.pruned.error}
+pruned_class <- predict(high_pruned, test, type = "class")
+table(pruned_class, test$sex)
+mean(pruned_class != test$sex)
+```
+## wykres błędu testowego w zależności od rozmiaru poddrzewa
+```{r }
+errors = rep()
+
+for (i in 2:25) {
+  pr <- prune.misclass(h_tree, best = i)
+  pr_class <- predict(pr, test, type = "class")
+  error = mean(pr_class != test$sex)
+  errors <- append(errors, error)
+}
+rozmiar <- rep(2:25)
+plot(rozmiar, errors, type = "b")
+```
+# Najmniejszy błąd jest dla rozmiaru poddrzewa = 8. Wraz z oddalaniem się od tej wartości błąd wzrasta
+
+
+
+
+### BAGGING
+
+```{r}
+bag <- randomForest(sex ~ ., data = student, mtry = 13, importance = TRUE)
+bag
+```
+# Wykres błędu OOB względem liczby drzew
+```{r}
+plot(bag, type = "l")
+```
+# Dla pojedyńczej ilości drzew w baggingu błąd jest duży. Natomiast wraz ze wzrostem ilości drzew spada. Od wartości około 60 drzew jest najniższy, z kolei dla większych ilości drzew oscyluje on w zbliżonym zakresie.
+
+
+## Wyznaczenie ważności predyktorów wraz z wizualizacją
+```{r}
+importance(bag)
+varImpPlot(bag)
+```
+# najbardziej zanczącym predyktorem jest ilość czasu poświęcana na naukę. Ważną rolę w klasyfikacji płci odgrywają również zmienne Walc i Dalc - ilość spożywanego alkoholu w weekendy / w tygodniu. Ocena końcowa po 1 semestrze również jest ważnych predyktorem.
+
+
+## Oszacowanie błędu testowego dla wyznaczonego zbioru walidacyjnego
+```{r}
+set.seed(2)
+bag <- randomForest(sex ~ ., data = train, mtry = 13,
+                         importance = TRUE)
+pred_bag <- predict(bag, newdata = test)
+mean((pred_bag != test$sex)^2)
+```
+## Wyznaczenie ważności predyktorów dla zmniejszonego zbioru
+```{r}
+importance(bag)
+varImpPlot(bag)
+```
+# Porównując wartości i wykresy dla bosstingu na całym zbiorze oraz na mniejszym (75%) widać spadek ważności predyktorów wraz ze zmniejszeniem zbioru. Pokazuje to, że im więcej danych tym większą skuteczność osiągają modele.
+
+
+
+## Zmniejszamy liczbę hodowanych drzew na 25   -->   osiągamy większy błąd i znacznie mniejszą ważność predyktorów
+```{r}
+set.seed(2)
+s_bag <- randomForest(sex ~ ., data = train, mtry = 13,
+                         importance = TRUE, ntree = 25)
+pred_s_bag <- predict(s_bag, newdata = test)
+mean((pred_s_bag != test$sex)^2)
+```
+```{r}
+importance(s_bag)
+varImpPlot(s_bag)
+```
+
+
+
+
+### LASY LOSOWE
+
+## Oszacowanie błędu testowego dla wyznaczonego zbioru walidacyjnego
+```{r}
+set.seed(2)
+rf <- randomForest(sex ~ ., data = train,
+                         importance = TRUE)
+pred_rf <- predict(rf, newdata = test)
+mean((pred_rf != test$sex)^2)
+```
+```{r}
+importance(rf)
+varImpPlot(rf)
+```
+# domyślnie skonfigurowany las losowy ma trochę większy błąd od baggingu. Ważność predyktorów jest znacznie mniejsza w przypadku użycia modelu domyślnie skonfigurowanego lasu losowego
+
+
+## Porównanie błędów OOB dla baggingu i domyślnie skonfigurowanego lasu losowego
+```{r}
+plot(bag, type = "l", col="red",name='bag')
+plot(rf, type = "l", col="blue",add=TRUE)
+legend(370, 0.48, legend=c("bagging", "random forest"),
+       col=c("red", "blue"), lty=1:2, cex=0.8)
+```
+# Błąd dla baggingu spada znacznie szybciej wraz ze zwiększeniem ilości drzew w porównaniu z domyślnym lasem.
+# Błąd dla baggingu cechuje się znacznie mniejszą rozbieżnością (jego wartości zawierają się w węższym przedziale) w porównaniu z domyślnym lasem.
+# jednak najniższy błąd jest osiągany dla domyślnego lasu przy ilości drzew pomiędzy 120-170
+
+
+
+
+
+### BOOSTING
+
+```{r}
+student <- read.csv(file = 'student/student-mat.csv', sep=";")
+col_names <- names(student)
+col_names <- col_names[col_names != "sex"]
+student$sex[student$sex == "M"] <- 1
+student$sex[student$sex == "F"] <- 0
+student[,col_names] <- lapply(student[,col_names] , factor)
+student$sex <- as.numeric(student$sex)
+head(student)
+```
+## Podział na zbiór walidacyjny i treningowy
+```{r}
+smp_size <- floor(0.75 * nrow(student))
+set.seed(123)
+train_ind <- sample(seq_len(nrow(student)), size = smp_size)
+
+train <- student[train_ind, ]
+test <- student[-train_ind, ]
+```
+
+## stworzenie modelu i uczenie
+```{r}
+
+boost <- gbm(sex ~ ., data = student, distribution = "bernoulli",
+                  n.trees = 5000, interaction.depth = 4)
+boost
+```
+```{r}
+summary(boost)
+```
+# najważniejszymi predyktorami okazały się:
+#  - absences - ilość nieobecności uczniów
+#  - G3, G1, G2 - oceny uzyskane za oba semestry / w pierwszym semestrze / w drugim semestrze
+
+
+## Wykonano wykresy częściowej zależności z uwzględnieniem najważniejszych predyktorów
+```{r}
+plot(boost, i.var = "absences")
+plot(boost, i.var = "G3")
+```
+# Wykres 1 pokazuje jak ilość opuszczonych dni wpływa na predykcję płci.
+#   - większa ilość opuszczonych dni --> większa predykcja, że jest to mężczyzna
+#   - mniejsza ilość opuszczonych dni --> większa predykcja, że jest to kobieta
+
+# Wykres 2 pokazuje wpływ uzyskanych stopni na predykcję płci.
+#   - wysokie stopnie (17 i 20) --> większa predykcja, że jest to mężczyzna
+#   - oceny nie są ani niskie, ani wysokie (9-16) --> większa predykcja, że jest to kobieta
+
+
+
+## Oszacowanie błędu testowego dla zbioru walidacyjnego.
+```{r }
+set.seed(2)
+boost <- gbm(sex ~ ., data = train, distribution = "bernoulli",
+                  interaction.depth = 4, n.trees = 5000)
+pred_boost <- predict(boost, newdata = test, n.trees = 5000, type="response")
+predict_class <- pred_boost > 0.5
+mean((predict_class != test$sex)^2)
+```
+
+# dla λ=0.01 --> zmniejszenie współczynnika uczenia spowalnia proces nauki lecz nie wpływa na zmniejszenie błędu (domyślnie λ=0.1)
+```{r }
+set.seed(2)
+boost <- gbm(sex ~ ., data = train, distribution = "bernoulli",
+                  interaction.depth = 4, n.trees = 5000, shrinkage = 0.01)
+pred_boost <- predict(boost, newdata = test, n.trees = 5000, type="response")
+predict_class <- pred_boost > 0.5
+mean((predict_class != test$sex)^2)
+```
+
+# dla d=1 --> zmniejszenie głębokości interakcji z 4 na 1 powoduje zwiększenie błędu
+```{r }
+set.seed(2)
+boost <- gbm(sex ~ ., data = train, distribution = "bernoulli",
+                  n.trees = 5000, shrinkage = 0.01)
+pred_boost <- predict(boost, newdata = test, n.trees = 5000, type="response")
+predict_class <- pred_boost > 0.5
+mean((predict_class != test$sex)^2)
+```
+## Można zastosować kroswalidację by przetestować różne kombinacje hiperparamtrów i wybrać takie ich wartości, które skutkują najmniejszym błędem na zbiorze walidacyjnym
+
+
+### PORÓWNANIE WYNIKÓW
+
+# drzewo decyzyjne - 0.25
+# Bagging - 0.21
+# lasy losowe - 0.22
+# boosting - 0.32
+
+
+# Najlepsze rezultaty osiągnięto stosując Bagging do zadania klasyfikacji płci.
+# Najgorsze rezultaty uzyskano stosując boosting  --> prawdpodobnie pojemność modelu jest zbyt duża dla naszej ilości danych oraz typu danych i model mógł za bardzo dopasować się do danych treningowych, przez co nie ma dobrej zdolności wnioskowania, co skutkuje stosunkowo dużym błędem na nowych danych
+
+# Regresja
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+library(ISLR)
+library(MASS)
+library(tree)
+library(randomForest)
+library(gbm)
+```
+
+Jeszcze raz wczytujemy oryginalne dane
+
+```{r}
+student <- read.csv(file = 'student/student-mat.csv', sep=";")
+names(student)
+dim(student)
+head(student)
+```
+Uczymy drzewo na wszystkich danych
+```{r}
+tree <- tree(G3 ~ ., data = student)
+summary(tree)
+```
+Wizualizujemy kształt drzewa
+```{r plottree}
+plot(tree)
+text(tree, pretty = 0)
+tree
+
+```
+
+##Istotne czynniki wpływające na ostateczną ocenę to ocena z 1 i drugiego semestru, nieobecności i wiek.
+## Podział na zbiór walidacyjny i treningowy
+```{r}
+smp_size <- floor(0.75 * nrow(student))
+set.seed(123)
+train_ind <- sample(seq_len(nrow(student)), size = smp_size)
+
+train <- student[train_ind, ]
+test <- student[-train_ind, ]
+```
+
+##Uczymy drzewo na zbiorze treningowym i obliczamy błąd średniokwadratowy na zbiorze walidacyjnym
+```{r}
+
+medv_tree <- tree(G3 ~ ., data = train)
+medv_pred <- predict(medv_tree, newdata = test)
+mean((medv_pred - test$G3)^2)
+```
+
+```{r}
+medv_cv <- cv.tree(medv_tree)
+plot(medv_cv$size, medv_cv$dev, type = "b")
+```
+## Obcinamy drzewo i sprawdzamy nowy błąd
+```{r}
+medv_pruned <- prune.tree(medv_tree, best = 8)
+plot(medv_pruned)
+text(medv_pruned)
+medv_pred <- predict(medv_pruned, newdata = test)
+mean((medv_pred - test$G3)^2)
+```
+##Las losowy
+```{r}
+set.seed(2)
+medv_rf <- randomForest(G3 ~ ., data = train,
+                         importance = TRUE)
+medv_pred_rf <- predict(medv_rf, newdata = test)
+mean((medv_pred_rf - test$G3)^2)
+```
+##Porównanie wyników
+
+Dla lasów losowych uzyskałam błąd 4.674332, a dla zwykłego drzewa decyzyjnego 4.996129.
+
