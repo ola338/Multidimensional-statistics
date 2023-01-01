@@ -1,2 +1,2 @@
 # Multidimensional-statistics
-Exercises implemented as part of academic course
+Exercises implemented as part of Multidimensional Statistics course at AGH
